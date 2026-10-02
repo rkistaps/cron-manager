@@ -58,8 +58,9 @@ final readonly class CronSyncService
             $this->writer->write($plan->newCrontab);
             $this->logger->info('Crontab block synced', [
                 'app_id' => $this->settings->appId,
-                'added' => count($plan->added),
-                'removed' => count($plan->removed),
+                'jobs_added' => $plan->jobsAdded,
+                'jobs_changed' => $plan->jobsChanged,
+                'jobs_removed' => $plan->jobsRemoved,
             ]);
         }
 
@@ -100,6 +101,8 @@ final readonly class CronSyncService
     {
         [$added, $removed, $unchanged] = $this->diffLines($existing?->allLines() ?? [], $desired->allLines());
 
+        [$jobsAdded, $jobsChanged, $jobsRemoved] = $this->diffJobs($existing?->jobs() ?? [], $desired->jobs());
+
         return new SyncPlan(
             $added,
             $removed,
@@ -107,7 +110,37 @@ final readonly class CronSyncService
             $existing?->isHandEdited() ?? false,
             $current,
             $this->parser->replace($current, $desired),
+            blockCreated: $existing === null,
+            jobsAdded: $jobsAdded,
+            jobsChanged: $jobsChanged,
+            jobsRemoved: $jobsRemoved,
         );
+    }
+
+    /**
+     * @param array<string, list<string>> $old Each job's lines, keyed by name
+     * @param array<string, list<string>> $new
+     * @return array{list<string>, list<string>, list<string>} Names added, changed, removed
+     */
+    private function diffJobs(array $old, array $new): array
+    {
+        $added = [];
+        $changed = [];
+        foreach ($new as $name => $lines) {
+            // A name of digits only, such as "123", comes back from the array as an int
+            if (!array_key_exists($name, $old)) {
+                $added[] = (string) $name;
+            } elseif ($old[$name] !== $lines) {
+                $changed[] = (string) $name;
+            }
+        }
+
+        $removed = [];
+        foreach (array_keys(array_diff_key($old, $new)) as $name) {
+            $removed[] = (string) $name;
+        }
+
+        return [$added, $changed, $removed];
     }
 
     /**

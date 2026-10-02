@@ -25,9 +25,7 @@ final class CrontabRenderer
                 continue;
             }
 
-            if ($job->description !== null && trim($job->description) !== '') {
-                $lines[] = '# ' . trim($job->description);
-            }
+            $lines[] = CrontabBlock::jobLabel($job->name, $job->description);
             $lines[] = $this->renderJobLine($settings, $job);
         }
 

@@ -1,8 +1,10 @@
-# BEGIN cron-manager:the-trader sha=470705525e53
+# BEGIN cron-manager:the-trader sha=9d09fe8753f5
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
-# Backfill funding history
+# job: funding-backfill - Backfill funding history
 0 3 * * * cd '/var/www/html' && mkdir -p '/tmp/cron-manager' 'data/cron' && flock -n '/tmp/cron-manager/the-trader-funding-backfill.lock' ./run funding/backfill >> 'data/cron/funding-backfill.log' 2>&1
+# job: prices-sync
 */5 * * * * cd '/var/www/html' && ./run prices/sync
+# job: weekly-report
 30 6 * * mon cd '/srv/o'\''brien app' && mkdir -p '/tmp/cron-manager' '/var/log' && flock -n '/tmp/cron-manager/the-trader-weekly-report.lock' php report.php >> '/var/log/o'\''brien report.log' 2>&1
 # END cron-manager:the-trader

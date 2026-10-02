@@ -12,6 +12,7 @@ use rkistaps\CronManager\Interfaces\CrontabWriterInterface;
 use rkistaps\CronManager\Interfaces\JobRepositoryInterface;
 use rkistaps\CronManager\Interfaces\RunHistoryStoreInterface;
 use rkistaps\CronManager\Repositories\InMemoryJobRepository;
+use rkistaps\CronManager\Services\CrontabRenderer;
 use rkistaps\CronManager\Stores\FileRunHistoryStore;
 use rkistaps\CronManager\Structures\CrontabSettings;
 use rkistaps\CronManager\Structures\JobDefinition;
@@ -52,7 +53,21 @@ final class CronCommandConfiguratorTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertStringContainsString('+ # BEGIN cron-manager:test-app sha=', $output);
+        self::assertStringEndsWith("A sync would change: created the block, with 2 jobs: backfill, failing.\n", $output);
         self::assertSame(0, $this->writer->writes);
+    }
+
+    public function testSyncCountsJobsNotLines(): void
+    {
+        // A block from an earlier sync, when only the backfill job was defined
+        $settings = new CrontabSettings('test-app', lockDirectory: $this->directory . '/locks');
+        $backfill = new JobDefinition('backfill', '0 3 * * *', 'true', $this->directory, description: 'Backfill');
+        $this->writer->crontab = (new CrontabRenderer())->render($settings, [$backfill])->render();
+
+        [$exitCode, $output] = $this->console('cron/sync');
+
+        self::assertSame(0, $exitCode);
+        self::assertStringEndsWith("Crontab updated: 1 job added (failing).\n", $output);
     }
 
     public function testSyncWritesAndASecondSyncIsUpToDate(): void

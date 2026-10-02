@@ -7,8 +7,40 @@ namespace rkistaps\CronManager\Structures;
 final readonly class CrontabBlock
 {
     private const string MARKER = 'cron-manager:';
+    // Rendered above every job's line, so a block read back from the crontab still knows which line is which job
+    private const string JOB_LABEL = '# job: ';
+    private const string JOB_LABEL_PATTERN = '/^# job: ([a-z0-9][a-z0-9-]*)(?: - .*)?$/';
 
     public string $checksum;
+
+    public static function jobLabel(string $name, ?string $description): string
+    {
+        $description = trim((string) $description);
+
+        return self::JOB_LABEL . $name . ($description === '' ? '' : ' - ' . $description);
+    }
+
+    /**
+     * Each job's lines, its label included, keyed by job name. Lines before the first label (SHELL, PATH) belong to
+     * no job, and neither do lines of a block written before jobs were labelled.
+     *
+     * @return array<string, list<string>>
+     */
+    public function jobs(): array
+    {
+        $jobs = [];
+        $name = null;
+        foreach ($this->lines as $line) {
+            if (preg_match(self::JOB_LABEL_PATTERN, $line, $matches) === 1) {
+                $name = $matches[1];
+            }
+            if ($name !== null) {
+                $jobs[$name][] = $line;
+            }
+        }
+
+        return $jobs;
+    }
 
     /**
      * @param list<string> $lines    The body: every line between the BEGIN and END markers

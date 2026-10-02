@@ -94,6 +94,7 @@ final readonly class CronCommandConfigurator implements CommandConfiguratorInter
         }
 
         $this->writePlan($output, $plan);
+        $output->writeln('A sync would change: ' . $this->jobSummary($plan));
 
         return 0;
     }
@@ -115,7 +116,7 @@ final readonly class CronCommandConfigurator implements CommandConfiguratorInter
         }
 
         $this->writePlan($output, $plan);
-        $output->writeln(sprintf('Crontab updated: %d added, %d removed.', count($plan->added), count($plan->removed)));
+        $output->writeln('Crontab updated: ' . $this->jobSummary($plan));
 
         return 0;
     }
@@ -175,6 +176,37 @@ final readonly class CronCommandConfigurator implements CommandConfiguratorInter
         foreach ($plan->added as $line) {
             $output->writeln('+ ' . $line);
         }
+    }
+
+    /**
+     * What changed, counted in jobs: the line diff above it also counts the markers and the SHELL and PATH lines
+     */
+    private function jobSummary(SyncPlan $plan): string
+    {
+        if ($plan->blockCreated) {
+            return $plan->jobsAdded === []
+                ? 'created the block, with no jobs.'
+                : sprintf('created the block, with %s: %s.', $this->jobCount($plan->jobsAdded), implode(', ', $plan->jobsAdded));
+        }
+
+        $parts = [];
+        foreach (['added' => $plan->jobsAdded, 'changed' => $plan->jobsChanged, 'removed' => $plan->jobsRemoved] as $verb => $names) {
+            if ($names !== []) {
+                $parts[] = sprintf('%s %s (%s)', $this->jobCount($names), $verb, implode(', ', $names));
+            }
+        }
+
+        return $parts === []
+            ? 'no jobs, only the block around them.'
+            : implode(', ', $parts) . '.';
+    }
+
+    /**
+     * @param list<string> $names
+     */
+    private function jobCount(array $names): string
+    {
+        return count($names) . (count($names) === 1 ? ' job' : ' jobs');
     }
 
     /**

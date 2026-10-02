@@ -36,8 +36,22 @@ final class CronSyncServiceTest extends TestCase
         self::assertSame($this->expectedBlock, $writer->crontab);
         self::assertSame(1, $writer->writes);
         self::assertSame([], $plan->removed);
-        self::assertCount(8, $plan->added);
+        self::assertCount(10, $plan->added);
         self::assertFalse($plan->handEdited);
+        self::assertTrue($plan->blockCreated);
+        self::assertSame(['funding-backfill', 'prices-sync', 'weekly-report'], $plan->jobsAdded);
+        self::assertSame([], $plan->jobsChanged);
+        self::assertSame([], $plan->jobsRemoved);
+    }
+
+    public function testCreatingABlockWithoutJobsAddsNoJobs(): void
+    {
+        $plan = (new CronSyncService(new CrontabSettings('the-trader'), new InMemoryJobRepository([]), new InMemoryCrontabWriter()))->sync();
+
+        // Four lines (the markers, SHELL and PATH), and not one of them a job
+        self::assertCount(4, $plan->added);
+        self::assertTrue($plan->blockCreated);
+        self::assertSame([], $plan->jobsAdded);
     }
 
     public function testSyncsBetweenForeignLinesAndLeavesThemAlone(): void
@@ -51,6 +65,8 @@ final class CronSyncServiceTest extends TestCase
         self::assertSame(self::FOREIGN_BEFORE . $this->expectedBlock . self::FOREIGN_AFTER, $writer->crontab);
         self::assertContains('SHELL=/bin/bash', $plan->unchanged);
         self::assertContains('# END cron-manager:the-trader', $plan->unchanged);
+        self::assertFalse($plan->blockCreated);
+        self::assertSame(['funding-backfill', 'prices-sync', 'weekly-report'], $plan->jobsAdded);
     }
 
     public function testAppendsToACrontabWithOnlyForeignLines(): void
@@ -72,6 +88,57 @@ final class CronSyncServiceTest extends TestCase
         self::assertFalse($plan->hasChanges());
         self::assertSame([], $plan->added);
         self::assertSame([], $plan->removed);
+        self::assertSame([], $plan->jobsAdded);
+        self::assertSame([], $plan->jobsChanged);
+        self::assertSame([], $plan->jobsRemoved);
+    }
+
+    public function testANewScheduleChangesOneJobRatherThanAddingAndRemovingLines(): void
+    {
+        $writer = new InMemoryCrontabWriter($this->expectedBlock);
+        $jobs = array_map(
+            static fn (JobDefinition $job): JobDefinition => $job->name === 'prices-sync'
+                ? new JobDefinition($job->name, '*/10 * * * *', $job->command, $job->workingDirectory, $job->preventOverlap)
+                : $job,
+            Jobs::fixed(),
+        );
+
+        $plan = (new CronSyncService(new CrontabSettings('the-trader'), new InMemoryJobRepository($jobs), $writer))->sync();
+
+        // The line diff sees the job's line and the BEGIN marker's checksum each removed and added
+        self::assertCount(2, $plan->added);
+        self::assertCount(2, $plan->removed);
+        self::assertSame([], $plan->jobsAdded);
+        self::assertSame(['prices-sync'], $plan->jobsChanged);
+        self::assertSame([], $plan->jobsRemoved);
+    }
+
+    public function testAJobWhoseNameIsDigitsKeepsItsNameAsAString(): void
+    {
+        $jobs = [new JobDefinition('2024', '0 0 * * *', 'true', '/app', preventOverlap: false)];
+
+        $plan = (new CronSyncService(new CrontabSettings('the-trader'), new InMemoryJobRepository($jobs), new InMemoryCrontabWriter()))->sync();
+
+        self::assertSame(['2024'], $plan->jobsAdded);
+    }
+
+    public function testABlockWrittenBeforeJobsWereLabelledHasNoJobsToCompare(): void
+    {
+        // Jobs used to be rendered with only their description above them, so their names can't be read back
+        $legacy = (new CrontabBlock('the-trader', [
+            'SHELL=/bin/bash',
+            'PATH=/usr/local/bin:/usr/bin:/bin',
+            '# Backfill funding history',
+            "0 3 * * * cd '/var/www/html' && ./run funding/backfill",
+        ]))->render();
+        $writer = new InMemoryCrontabWriter($legacy);
+
+        $plan = $this->service($writer)->sync();
+
+        self::assertFalse($plan->handEdited);
+        self::assertSame(['funding-backfill', 'prices-sync', 'weekly-report'], $plan->jobsAdded);
+        self::assertSame([], $plan->jobsRemoved);
+        self::assertSame($this->expectedBlock, $writer->crontab);
     }
 
     public function testSyncingTwiceChangesNothingTheSecondTime(): void
@@ -190,6 +257,9 @@ final class CronSyncServiceTest extends TestCase
 
         self::assertContains("*/5 * * * * cd '/var/www/html' && ./run prices/sync", $plan->removed);
         self::assertStringNotContainsString('prices/sync', $writer->crontab);
+        self::assertSame(['prices-sync'], $plan->jobsRemoved);
+        self::assertSame([], $plan->jobsAdded);
+        self::assertSame([], $plan->jobsChanged);
     }
 
     public function testAWriterThatNeedsAUserFieldNeedsAUserInTheSettings(): void

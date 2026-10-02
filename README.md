@@ -20,10 +20,10 @@ the definitions change, and can record the outcome of every run.
 The package owns exactly one block of the crontab, marked with the app id:
 
 ```
-# BEGIN cron-manager:the-trader sha=c7166156d2e3
+# BEGIN cron-manager:the-trader sha=7809c1319093
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
-# Backfill funding history
+# job: funding-backfill - Backfill funding history
 0 3 * * * cd '/var/www/html' && mkdir -p '/tmp/cron-manager' 'data/cron' && flock -n '/tmp/cron-manager/the-trader-funding-backfill.lock' ./run funding/backfill >> 'data/cron/funding-backfill.log' 2>&1
 # END cron-manager:the-trader
 ```
@@ -35,6 +35,9 @@ PATH=/usr/local/bin:/usr/bin:/bin
   between the markers, each followed by a newline. If someone edits the block by hand, the checksum no longer
   matches and sync refuses to overwrite it unless you force it. The error lists the lines that differ.
 - **You can preview a sync.** `diff()` returns what a sync would change without writing anything.
+- **Each job is labelled** with a `# job: <name>` comment above its line, followed by its description when it has
+  one. That is how a sync reads back which line belongs to which job, and reports jobs added, changed and removed
+  rather than lines. A block written by a version before the labels counts every job as added on its next sync.
 - **A new block goes at the end** of the crontab. An existing block is replaced where it is.
 
 ## Installation
@@ -58,7 +61,7 @@ A job is a `JobDefinition`:
 | `preventOverlap` | Default `true`. Skips a run while the previous one still holds its lock |
 | `logFile` | Optional. When set, stdout and stderr are appended to it. A relative path is relative to the working directory |
 | `enabled` | Default `true`. A disabled job is not rendered, so a sync removes its line |
-| `description` | Optional, rendered as a comment above the line |
+| `description` | Optional, rendered after the job's name in the `# job:` comment above its line |
 
 ```php
 use rkistaps\CronManager\Repositories\InMemoryJobRepository;
@@ -94,6 +97,8 @@ foreach ($plan->removed as $line) {
 foreach ($plan->added as $line) {
     echo "+ {$line}\n";
 }
+// The same change in jobs: the line lists above also hold the markers and the SHELL and PATH lines
+echo implode(', ', $plan->jobsAdded), "\n";     // Also $plan->jobsChanged, $plan->jobsRemoved, $plan->blockCreated
 
 $sync->sync();                  // Writes the block. Throws HandEditedBlockException on a hand-edited block
 $sync->sync(force: true);       // Overwrites a hand-edited block
@@ -139,8 +144,8 @@ composer require rkistaps/the-app
 | Command | What it does |
 |---|---|
 | `cron/list` | Shows every defined job with its schedule and next three run times |
-| `cron/diff` | Shows what a sync would change, without writing |
-| `cron/sync [--force]` | Writes the block. Refuses on a hand-edited block unless `--force` |
+| `cron/diff` | Shows what a sync would change, without writing: the lines, then the jobs added, changed and removed |
+| `cron/sync [--force]` | Writes the block and says which jobs it added, changed and removed. Refuses on a hand-edited block unless `--force` |
 | `cron/remove` | Deletes this app's block and nothing else |
 | `cron/run --job=<name>` | The run wrapper. Runs one job and records the outcome |
 | `cron/status` | Shows each job's last run: when, how long, exit code |
