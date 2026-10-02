@@ -72,4 +72,37 @@ final class CrontabRendererTest extends TestCase
 
         exec('rm -rf ' . escapeshellarg($root));
     }
+
+    public function testCreatesTheLogDirectoryBeforeTheShellOpensTheLog(): void
+    {
+        $root = sys_get_temp_dir() . '/cron-manager-render-' . bin2hex(random_bytes(4));
+        mkdir($root, 0777, true);
+
+        // Without overlap protection too: the log directory must not depend on the lock directory's mkdir
+        foreach ([true, false] as $preventOverlap) {
+            $settings = new CrontabSettings('render-test', lockDirectory: $root . '/locks');
+            $job = new JobDefinition('pwd', '* * * * *', 'pwd', $root, $preventOverlap, logFile: "logs/o'brien/out.log");
+
+            $line = (new CrontabRenderer())->renderJobLine($settings, $job);
+            $command = (string) preg_replace('/^(\S+\s+){5}/', '', $line);
+
+            exec('/bin/bash -c ' . escapeshellarg($command) . ' 2>&1', $output, $exitCode);
+
+            self::assertSame(0, $exitCode, implode("\n", $output));
+            self::assertFileExists($root . "/logs/o'brien/out.log");
+            exec('rm -rf ' . escapeshellarg($root . '/logs'));
+        }
+
+        exec('rm -rf ' . escapeshellarg($root));
+    }
+
+    public function testCreatesOnlyTheLogDirectoryWithoutOverlapProtection(): void
+    {
+        $job = new JobDefinition('sync', '*/5 * * * *', './run sync', '/app', preventOverlap: false, logFile: 'data/cron/sync.log');
+
+        self::assertSame(
+            "*/5 * * * * cd '/app' && mkdir -p 'data/cron' && ./run sync >> 'data/cron/sync.log' 2>&1",
+            (new CrontabRenderer())->renderJobLine(new CrontabSettings('the-trader'), $job),
+        );
+    }
 }

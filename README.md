@@ -20,11 +20,11 @@ the definitions change, and can record the outcome of every run.
 The package owns exactly one block of the crontab, marked with the app id:
 
 ```
-# BEGIN cron-manager:the-trader sha=9d1c0f3a2b7e
+# BEGIN cron-manager:the-trader sha=c7166156d2e3
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 # Backfill funding history
-0 3 * * * cd '/var/www/html' && mkdir -p '/tmp/cron-manager' && flock -n '/tmp/cron-manager/the-trader-funding-backfill.lock' ./run funding/backfill >> 'data/cron/funding-backfill.log' 2>&1
+0 3 * * * cd '/var/www/html' && mkdir -p '/tmp/cron-manager' 'data/cron' && flock -n '/tmp/cron-manager/the-trader-funding-backfill.lock' ./run funding/backfill >> 'data/cron/funding-backfill.log' 2>&1
 # END cron-manager:the-trader
 ```
 
@@ -260,7 +260,7 @@ server.
 With `recordHistory` on, each line calls the run wrapper instead of the command:
 
 ```
-0 3 * * * cd '/var/www/html' && mkdir -p '/tmp/cron-manager' && flock -n '/tmp/cron-manager/the-trader-funding-backfill.lock' ./run cron/run --job='funding-backfill' >> 'data/cron/funding-backfill.log' 2>&1
+0 3 * * * cd '/var/www/html' && mkdir -p '/tmp/cron-manager' 'data/cron' && flock -n '/tmp/cron-manager/the-trader-funding-backfill.lock' ./run cron/run --job='funding-backfill' >> 'data/cron/funding-backfill.log' 2>&1
 ```
 
 The wrapper, `cron/run` or `JobRunService::run()`, runs the job's command through the configured shell in the job's
@@ -299,8 +299,9 @@ weekly-report     never run
   `a && b` would only hold the lock for `a`. Put compound commands in a script, or turn overlap protection off.
 - **A skipped run fails.** When the previous run still holds the lock, `flock -n` exits with code 1, and no run is
   recorded.
-- **The lock directory is created on each run** with `mkdir -p`, since `/tmp` is emptied on reboot and `flock`
-  doesn't create directories.
+- **The lock directory and the log file's directory are created on each run** with `mkdir -p`, since `/tmp` is
+  emptied on reboot and neither `flock` nor the shell's `>>` creates directories. Without it, a missing log
+  directory makes the shell refuse the line before the job starts, and nothing runs or records the failure.
 
 ## Development
 
