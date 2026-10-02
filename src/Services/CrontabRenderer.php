@@ -44,9 +44,20 @@ final class CrontabRenderer
 
         $parts[] = 'cd ' . escapeshellarg($job->workingDirectory) . ' &&';
 
+        // Neither flock nor the shell's >> creates a directory, and /tmp is emptied on reboot. A missing log
+        // directory makes the shell refuse the line before the job starts, so nothing would run or record a failure.
+        $directories = [];
         if ($job->preventOverlap) {
-            // flock creates the lock file but not its directory, and /tmp is emptied on reboot
-            $parts[] = 'mkdir -p ' . escapeshellarg($settings->lockDirectory) . ' &&';
+            $directories[] = $settings->lockDirectory;
+        }
+        if ($job->logFile !== null && dirname($job->logFile) !== '.') {
+            $directories[] = dirname($job->logFile);
+        }
+        if ($directories !== []) {
+            $parts[] = 'mkdir -p ' . implode(' ', array_map(escapeshellarg(...), $directories)) . ' &&';
+        }
+
+        if ($job->preventOverlap) {
             $parts[] = 'flock -n ' . escapeshellarg($this->lockPath($settings, $job));
         }
 
